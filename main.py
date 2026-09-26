@@ -107,73 +107,18 @@ def handle_all_messages(message):
 def handle_menu_click(message):
     text = message.text
     chat_id = message.chat.id
-    
-    if text == "1 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_1(),
-        )
-    elif text == "2 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_2(),
-        )
-    elif text == "3 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_3(),
-        )
-    elif text == "4 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_4(),
-        )
-    elif text == "5 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_5(),
-        )
-    elif text == "6 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_6(),
-        )
-    elif text == "7 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_7(),
-        )
-    elif text == "8 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_8(),
-        )
-    elif text == "9 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_9(),
-        )
-    elif text == "10 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_10(),
-        )
-    elif text == "11 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_11(),
-        )
 
+
+    if text == "Вернуться назад":
+        bot.send_message(chat_id,"Выбери:",reply_markup=get_main_menu())
+        return
+        
+    for i in range(1, 12):
+        number_class = f"{str(i)} Класс"
+
+        if text == number_class:
+
+            bot.send_message(chat_id,"Выбери предмет:",reply_markup=function_list[i - 1]())
+            break
 
 bot.infinity_polling()
