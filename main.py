@@ -1,11 +1,12 @@
 from telebot import types
 from button import *
 
+import math
 import telebot
 
-maps = {'user':{
-    "математик":[5,5,5,5,4,3,4,5,5]
-}}
+# {user_id: {"математика": [90, 85, 100]}}
+maps = {}
+user_state = {}
 
 
 
@@ -26,6 +27,39 @@ def get_main_menu():
     markup.add(btn_homework, btn_events)
     markup.add(btn_gdz)
     return markup
+
+
+def get_back():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("Вернуться назад"))
+    return markup
+
+
+def parse_grades(text):
+    parts = text.replace(";", " ").replace(",", " ").split()
+    grades = []
+    for p in parts:
+        p = p.strip()
+        try:
+            g = float(p) if "." in p else int(p)
+        except:
+            return []
+        if 0 <= g <= 100:
+            grades.append(g)
+        else:
+            return []
+    return grades
+
+
+def need_marks(total, count, target, max_mark=100):
+    if count == 0:
+        return 0
+    if total / count >= target:
+        return 0
+    n = math.ceil((target * count - total) / (max_mark - target))
+    if n < 0:
+        return 0
+    return n
 
 
 @bot.message_handler(commands=["start"])
@@ -62,9 +96,43 @@ def handle_all_messages(message):
     text = message.text
     chat_id = message.chat.id
 
+    if chat_id in user_state:
+        if text == "Вернуться назад":
+            del user_state[chat_id]
+            bot.send_message(chat_id, "Выбери:", reply_markup=get_main_menu())
+            return
+        if user_state[chat_id] == "жду предмет":
+            subject = text.strip().lower()
+            user_state[chat_id] = subject
+            bot.send_message(chat_id, "Предмет: " + subject + "\nВведи через запятую оценки от 0 до 100 (например: 90, 85, 100):")
+            return
+        subject = user_state[chat_id]
+        new_grades = parse_grades(text or "")
+        if not new_grades:
+            bot.send_message(chat_id, "Не понял. Введи только числа от 0 до 100 через запятую, например: 90, 85, 100")
+            return
+        # добавляем к уже сохранённым оценкам, а не перезаписываем
+        grades = maps.setdefault(chat_id, {}).setdefault(subject, [])
+        grades.extend(new_grades)
+        total = sum(grades)
+        count = len(grades)
+        avg = total / count
+        out = "Предмет: " + subject + "\nОценки: " + ", ".join(map(str, grades)) + "\nСредний балл: " + str(round(avg, 2)) + "\nВсего: " + str(count) + ", мин: " + str(min(grades)) + ", макс: " + str(max(grades)) + "\n"
+        if avg >= 90:
+            out = out + "Выходит отлично!"
+        elif avg >= 75:
+            out = out + "Выходит хорошо. До 90 нужно еще " + str(need_marks(total, count, 90)) + " соток."
+        elif avg >= 50:
+            out = out + "Выходит удовл. До 75 нужно еще " + str(need_marks(total, count, 75)) + " соток."
+        else:
+            out = out + "Выходит неуд. До 50 нужно еще " + str(need_marks(total, count, 50)) + " соток."
+        del user_state[chat_id]
+        bot.send_message(chat_id, out, reply_markup=get_main_menu())
+        return
 
     if text == "⭐ Подсчет Оценок":
-        bot.send_message(chat_id, "Скоро...")
+        user_state[chat_id] = "жду предмет"
+        bot.send_message(chat_id, "Введи название предмета:", reply_markup=get_back())
     elif text == "📅 Расписание":
         bot.send_message(chat_id, "Скоро...")
     elif text == "📚 Домашка":
@@ -120,5 +188,5 @@ def handle_menu_click(message):
 
             bot.send_message(chat_id,"Выбери предмет:",reply_markup=function_list[i - 1]())
             break
-
+bot.remove_webhook()
 bot.infinity_polling()
