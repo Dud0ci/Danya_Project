@@ -3,10 +3,18 @@ from button import *
 
 import math
 import telebot
+from datetime import date
 
 # {user_id: {"математика": [90, 85, 100]}}
 maps = {}
 user_state = {}
+# {user_id: {"понедельник": ["математика", "физика"]}}
+schedules = {}
+DAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+# {user_id: [{"предмет": "математика", "задание": "№ 125, 126"}]}
+homeworks = {}
+# {user_id: [{"дата": date(2026, 10, 5), "текст": "контрольная по физике"}]}
+events = {}
 
 
 
@@ -33,6 +41,98 @@ def get_back():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(types.KeyboardButton("Вернуться назад"))
     return markup
+
+
+def get_schedule_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("Понедельник"), types.KeyboardButton("Вторник"))
+    markup.add(types.KeyboardButton("Среда"), types.KeyboardButton("Четверг"))
+    markup.add(types.KeyboardButton("Пятница"), types.KeyboardButton("Суббота"))
+    markup.add(types.KeyboardButton("Воскресенье"), types.KeyboardButton("Вся неделя"))
+    markup.add(types.KeyboardButton("Ввести расписание"), types.KeyboardButton("Очистить"))
+    markup.add(types.KeyboardButton("Вернуться назад"))
+    return markup
+
+
+def format_day(day, lessons):
+    if not lessons:
+        return day.capitalize() + ": пока пусто"
+    lines = [day.capitalize() + ":"]
+    for i, l in enumerate(lessons):
+        lines.append(str(i + 1) + ". " + l)
+    return "\n".join(lines)
+
+
+def format_week(chat_id):
+    sched = schedules.get(chat_id, {})
+    parts = []
+    for d in DAYS:
+        parts.append(format_day(d, sched.get(d, [])))
+    return "\n\n".join(parts)
+
+
+def get_homework_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("Добавить задание"), types.KeyboardButton("Все задания"))
+    markup.add(types.KeyboardButton("Задание выполнено"), types.KeyboardButton("Удалить все задания"))
+    markup.add(types.KeyboardButton("Вернуться назад"))
+    return markup
+
+
+def get_events_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("Добавить событие"), types.KeyboardButton("Все события"))
+    markup.add(types.KeyboardButton("Удалить событие"), types.KeyboardButton("Удалить все события"))
+    markup.add(types.KeyboardButton("Вернуться назад"))
+    return markup
+
+
+def format_homeworks(chat_id):
+    hw = homeworks.get(chat_id, [])
+    if not hw:
+        return "Домашних заданий нет 🎉"
+    lines = ["Домашка:"]
+    for i, h in enumerate(hw):
+        lines.append(str(i + 1) + ". " + h["предмет"].capitalize() + ": " + h["задание"])
+    return "\n".join(lines)
+
+
+def parse_date(text):
+    # принимает ДД.ММ или ДД.ММ.ГГГГ
+    parts = text.strip().replace("/", ".").replace("-", ".").split(".")
+    try:
+        day = int(parts[0])
+        month = int(parts[1])
+        year = int(parts[2]) if len(parts) > 2 else date.today().year
+        if year < 100:
+            year += 2000
+        d = date(year, month, day)
+    except:
+        return None
+    # если год не указан и дата уже прошла — значит следующий год
+    if len(parts) == 2 and d < date.today():
+        d = date(year + 1, month, day)
+    return d
+
+
+def format_events(chat_id):
+    ev = events.get(chat_id, [])
+    if not ev:
+        return "Событий пока нет."
+    today = date.today()
+    lines = ["События:"]
+    for i, e in enumerate(ev):
+        left = (e["дата"] - today).days
+        if left == 0:
+            when = "сегодня!"
+        elif left == 1:
+            when = "завтра"
+        elif left > 0:
+            when = "через " + str(left) + " дн."
+        else:
+            when = "прошло"
+        lines.append(str(i + 1) + ". " + e["дата"].strftime("%d.%m.%Y") + " — " + e["текст"] + " (" + when + ")")
+    return "\n".join(lines)
 
 
 def parse_grades(text):
@@ -101,7 +201,93 @@ def handle_all_messages(message):
             del user_state[chat_id]
             bot.send_message(chat_id, "Выбери:", reply_markup=get_main_menu())
             return
-        if user_state[chat_id] == "жду предмет":
+        state = user_state[chat_id]
+        if state == "ввод дня":
+            day = (text or "").strip().lower()
+            if day in DAYS:
+                user_state[chat_id] = "ввод уроков:" + day
+                bot.send_message(chat_id, day.capitalize() + ": введи уроки через запятую или с новой строки. Пример: математика, русский язык, физика. Для пустого дня отправь: пусто", reply_markup=get_back())
+            else:
+                bot.send_message(chat_id, "Выбери день кнопками.", reply_markup=get_schedule_menu())
+            return
+        if state.startswith("ввод уроков:"):
+            day = state.split(":", 1)[1]
+            if (text or "").strip().lower() in ("пусто", "нет", "-", "выходной"):
+                lessons = []
+            else:
+                lessons = [s.strip() for s in (text or "").replace("\n", ",").split(",") if s.strip()]
+                if not lessons:
+                    bot.send_message(chat_id, "Не понял. Введи уроки через запятую.")
+                    return
+            schedules.setdefault(chat_id, {})[day] = lessons
+            del user_state[chat_id]
+            bot.send_message(chat_id, format_day(day, lessons), reply_markup=get_schedule_menu())
+            return
+        if state == "дз предмет":
+            subject = (text or "").strip().lower()
+            if not subject:
+                bot.send_message(chat_id, "Введи название предмета.")
+                return
+            user_state[chat_id] = "дз задание:" + subject
+            bot.send_message(chat_id, "Предмет: " + subject + "\nТеперь напиши, что задали:", reply_markup=get_back())
+            return
+        if state.startswith("дз задание:"):
+            subject = state.split(":", 1)[1]
+            task = (text or "").strip()
+            if not task:
+                bot.send_message(chat_id, "Напиши задание текстом.")
+                return
+            homeworks.setdefault(chat_id, []).append({"предмет": subject, "задание": task})
+            del user_state[chat_id]
+            bot.send_message(chat_id, "Записал!\n\n" + format_homeworks(chat_id), reply_markup=get_homework_menu())
+            return
+        if state == "дз выполнено":
+            hw = homeworks.get(chat_id, [])
+            try:
+                n = int((text or "").strip())
+            except:
+                n = 0
+            if not 1 <= n <= len(hw):
+                bot.send_message(chat_id, "Введи номер задания из списка (от 1 до " + str(len(hw)) + ").")
+                return
+            done = hw.pop(n - 1)
+            del user_state[chat_id]
+            bot.send_message(chat_id, "Молодец! Выполнено: " + done["предмет"].capitalize() + " — " + done["задание"] + "\n\n" + format_homeworks(chat_id), reply_markup=get_homework_menu())
+            return
+        if state == "событие дата":
+            d = parse_date(text or "")
+            if d is None:
+                bot.send_message(chat_id, "Не понял дату. Введи в формате ДД.ММ, например: 05.10")
+                return
+            user_state[chat_id] = "событие текст:" + d.isoformat()
+            bot.send_message(chat_id, "Дата: " + d.strftime("%d.%m.%Y") + "\nЧто за событие?", reply_markup=get_back())
+            return
+        if state.startswith("событие текст:"):
+            d = date.fromisoformat(state.split(":", 1)[1])
+            what = (text or "").strip()
+            if not what:
+                bot.send_message(chat_id, "Напиши, что за событие.")
+                return
+            ev = events.setdefault(chat_id, [])
+            ev.append({"дата": d, "текст": what})
+            ev.sort(key=lambda e: e["дата"])
+            del user_state[chat_id]
+            bot.send_message(chat_id, "Добавил!\n\n" + format_events(chat_id), reply_markup=get_events_menu())
+            return
+        if state == "событие удалить":
+            ev = events.get(chat_id, [])
+            try:
+                n = int((text or "").strip())
+            except:
+                n = 0
+            if not 1 <= n <= len(ev):
+                bot.send_message(chat_id, "Введи номер события из списка (от 1 до " + str(len(ev)) + ").")
+                return
+            ev.pop(n - 1)
+            del user_state[chat_id]
+            bot.send_message(chat_id, "Удалил.\n\n" + format_events(chat_id), reply_markup=get_events_menu())
+            return
+        if state == "жду предмет":
             subject = text.strip().lower()
             user_state[chat_id] = subject
             bot.send_message(chat_id, "Предмет: " + subject + "\nВведи через запятую оценки от 0 до 100 (например: 90, 85, 100):")
@@ -134,11 +320,50 @@ def handle_all_messages(message):
         user_state[chat_id] = "жду предмет"
         bot.send_message(chat_id, "Введи название предмета:", reply_markup=get_back())
     elif text == "📅 Расписание":
-        bot.send_message(chat_id, "Скоро...")
+        bot.send_message(chat_id, "Выбери день или нажми «Ввести расписание»:", reply_markup=get_schedule_menu())
+    elif text == "Ввести расписание":
+        user_state[chat_id] = "ввод дня"
+        bot.send_message(chat_id, "На какой день ввести? Выбери кнопкой.", reply_markup=get_schedule_menu())
+    elif text == "Очистить":
+        schedules[chat_id] = {}
+        bot.send_message(chat_id, "Расписание очищено.", reply_markup=get_schedule_menu())
+    elif text == "Вся неделя":
+        bot.send_message(chat_id, format_week(chat_id), reply_markup=get_schedule_menu())
+    elif (text or "").lower() in DAYS:
+        day = text.lower()
+        bot.send_message(chat_id, format_day(day, schedules.get(chat_id, {}).get(day, [])), reply_markup=get_schedule_menu())
     elif text == "📚 Домашка":
-        bot.send_message(chat_id, "Скоро...")
+        bot.send_message(chat_id, format_homeworks(chat_id), reply_markup=get_homework_menu())
+    elif text == "Добавить задание":
+        user_state[chat_id] = "дз предмет"
+        bot.send_message(chat_id, "По какому предмету задание?", reply_markup=get_back())
+    elif text == "Все задания":
+        bot.send_message(chat_id, format_homeworks(chat_id), reply_markup=get_homework_menu())
+    elif text == "Задание выполнено":
+        if not homeworks.get(chat_id):
+            bot.send_message(chat_id, "Домашних заданий нет 🎉", reply_markup=get_homework_menu())
+        else:
+            user_state[chat_id] = "дз выполнено"
+            bot.send_message(chat_id, format_homeworks(chat_id) + "\n\nВведи номер выполненного задания:", reply_markup=get_back())
+    elif text == "Удалить все задания":
+        homeworks[chat_id] = []
+        bot.send_message(chat_id, "Все задания удалены.", reply_markup=get_homework_menu())
     elif text == "🎉 События":
-        bot.send_message(chat_id, "Скоро...")
+        bot.send_message(chat_id, format_events(chat_id), reply_markup=get_events_menu())
+    elif text == "Добавить событие":
+        user_state[chat_id] = "событие дата"
+        bot.send_message(chat_id, "Введи дату в формате ДД.ММ (например: 05.10):", reply_markup=get_back())
+    elif text == "Все события":
+        bot.send_message(chat_id, format_events(chat_id), reply_markup=get_events_menu())
+    elif text == "Удалить событие":
+        if not events.get(chat_id):
+            bot.send_message(chat_id, "Событий пока нет.", reply_markup=get_events_menu())
+        else:
+            user_state[chat_id] = "событие удалить"
+            bot.send_message(chat_id, format_events(chat_id) + "\n\nВведи номер события, которое удалить:", reply_markup=get_back())
+    elif text == "Удалить все события":
+        events[chat_id] = []
+        bot.send_message(chat_id, "Все события удалены.", reply_markup=get_events_menu())
 
     elif text == "📖 ГДЗ":
         bot.send_message(chat_id, "Выбери класс:", reply_markup=get_gdz_submenu())
