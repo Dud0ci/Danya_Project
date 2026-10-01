@@ -1,6 +1,20 @@
+from button import *
+import math
+import telebot
+
+# {user_id: {"математика": [90, 85, 100]}}
+maps = {}
+user_state = {}
+
+
+hw_step = {}
+hw_storage = {}
+
+bot = telebot.TeleBot('8980981276:AAGqUoNXB0x1fPYwbu4XDHHBVIraXBN2HVI')
+
+
 def get_main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
-
 
     btn_games = types.KeyboardButton("⭐ Подсчет Оценок")
     btn_schedule = types.KeyboardButton("📅 Расписание")
@@ -14,16 +28,47 @@ def get_main_menu():
     return markup
 
 
+def get_back():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("Вернуться назад"))
+    return markup
+
+
+def parse_grades(text):
+    parts = text.replace(";", " ").replace(",", " ").split()
+    grades = []
+    for p in parts:
+        p = p.strip()
+        try:
+            g = float(p) if "." in p else int(p)
+        except:
+            return []
+        if 0 <= g <= 100:
+            grades.append(g)
+        else:
+            return []
+    return grades
+
+
+def need_marks(total, count, target, max_mark=100):
+    if count == 0:
+        return 0
+    if total / count >= target:
+        return 0
+    n = math.ceil((target * count - total) / (max_mark - target))
+    if n < 0:
+        return 0
+    return n
+
+
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
     text = ("<-✧ ▬◻▬ ▬◻▬ ✦✧✦ ▬◻▬ ▬◻▬ ✧ ->\n"
-        "Привет! Я твой бот для учёбы!\n"
-        "Выбери пункт в меню, чтобы начать.\n"
-        "<-✧ ▬◻▬ ▬◻▬ ✦✧✦ ▬◻▬ ▬◻▬ ✧ ->"
-    )
+            "Привет! Я твой бот для учёбы!\n"
+            "Выбери пункт в меню, чтобы начать.\n"
+            "<-✧ ▬◻▬ ▬◻▬ ✦✧✦ ▬◻▬ ▬◻▬ ✧ ->"
+            )
     bot.send_message(message.chat.id, text, reply_markup=get_main_menu())
-
-
 
 
 '''
@@ -43,75 +88,72 @@ def send_welcome(message):
             reply_markup=get_gdz_submenu()
         )
 '''
+
+
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
     text = message.text
     chat_id = message.chat.id
 
+    if chat_id in user_state:
+        if text == "Вернуться назад":
+            del user_state[chat_id]
+            bot.send_message(chat_id, "Выбери:", reply_markup=get_main_menu())
+            return
+        if user_state[chat_id] == "жду предмет":
+            subject = text.strip().lower()
+            user_state[chat_id] = subject
+            bot.send_message(chat_id,
+                             "Предмет: " + subject + "\nВведи через запятую оценки от 0 до 100 (например: 90, 85, 100):")
+            return
+        subject = user_state[chat_id]
+        new_grades = parse_grades(text or "")
+        if not new_grades:
+            bot.send_message(chat_id, "Не понял. Введи только числа от 0 до 100 через запятую, например: 90, 85, 100")
+            return
+        # добавляем к уже сохранённым оценкам, а не перезаписываем
+        grades = maps.setdefault(chat_id, {}).setdefault(subject, [])
+        grades.extend(new_grades)
+        total = sum(grades)
+        count = len(grades)
+        avg = total / count
+        out = "Предмет: " + subject + "\nОценки: " + ", ".join(map(str, grades)) + "\nСредний балл: " + str(
+            round(avg, 2)) + "\nВсего: " + str(count) + ", мин: " + str(min(grades)) + ", макс: " + str(
+            max(grades)) + "\n"
+        if avg >= 90:
+            out = out + "Выходит отлично!"
+        elif avg >= 75:
+            out = out + "Выходит хорошо. До 90 нужно еще " + str(need_marks(total, count, 90)) + " соток."
+        elif avg >= 50:
+            out = out + "Выходит удовл. До 75 нужно еще " + str(need_marks(total, count, 75)) + " соток."
+        else:
+            out = out + "Выходит неуд. До 50 нужно еще " + str(need_marks(total, count, 50)) + " соток."
+        del user_state[chat_id]
+        bot.send_message(chat_id, out, reply_markup=get_main_menu())
+        return
 
     if text == "⭐ Подсчет Оценок":
-        bot.send_message(chat_id, "Скоро...")
+        user_state[chat_id] = "жду предмет"
+        bot.send_message(chat_id, "Введи название предмета:", reply_markup=get_back())
     elif text == "📅 Расписание":
         bot.send_message(chat_id, "Скоро...")
     elif text == "📚 Домашка":
-        bot.send_message(chat_id, "Скоро...")
+        user_state[chat_id] = "жду предмет"
+        bot.send_message(chat_id,"Выбери:", reply_markup=hw_menu())
     elif text == "🎉 События":
-        bot.send_message(chat_id, "Скоро...")
-
+        bot.send_message(chat_id,"Скоро...")
     elif text == "📖 ГДЗ":
         bot.send_message(chat_id, "Выбери класс:", reply_markup=get_gdz_submenu())
 
-    elif text == "1 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_1())
-    elif text == "2 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_2())
-    elif text == "3 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_3())
-    elif text == "4 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_4())
-    elif text == "5 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_5())
-    elif text == "6 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_6())
-    elif text == "7 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_7())
-    elif text == "8 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_8())
-    elif text == "9 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_9())
-    elif text == "10 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_10())
-    elif text == "11 Класс":
-        bot.send_message(chat_id, "Выбери предмет:", reply_markup=btn_11())
-
-    elif text == "Вернуться назад":
+    if text == "Вернуться назад":
         bot.send_message(chat_id, "Выбери:", reply_markup=get_main_menu())
+    else:
+        for i in range(1, 12):
+            number_class = f'{str(i)} Класс'
+            if text == number_class:
+                bot.send_message(chat_id, "Выбери предмет:", reply_markup=function_list[i - 1]())
+                break
 
-
-
-def get_gdz_submenu():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    btn_1 = types.KeyboardButton("1 Класс")
-    btn_2 = types.KeyboardButton("2 Класс")
-    btn_3 = types.KeyboardButton("3 Класс")
-    btn_4 = types.KeyboardButton("4 Класс")
-    btn_5 = types.KeyboardButton("5 Класс")
-    btn_6 = types.KeyboardButton("6 Класс")
-    btn_7 = types.KeyboardButton("7 Класс")
-    btn_8 = types.KeyboardButton("8 Класс")
-    btn_9 = types.KeyboardButton("9 Класс")
-    btn_10 = types.KeyboardButton("10 Класс")
-    btn_11 = types.KeyboardButton("11 Класс")
-    back = types.KeyboardButton("Вернуться назад")
-
-    markup.add(btn_1, btn_2)
-    markup.add(btn_3, btn_4)
-    markup.add(btn_5, btn_6)
-    markup.add(btn_7, btn_8)
-    markup.add(btn_9, btn_10)
-    markup.add(btn_11,back)
-
-    return markup
 
 ''' Каждый предмет если что внимание не обращайте
     1: ["Математика", "Русский язык", "Литература", "Окружающий мир"],
@@ -127,254 +169,87 @@ def get_gdz_submenu():
     11: ["Алгебра", "Геометрия", "Русский язык", "Литература", "Английский язык", "История","География", "Биология", "Физика", "Химия", "Информатика"],
 '''
 
-def btn_1():
-    #markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup = types.InlineKeyboardMarkup()
-    matem = types.InlineKeyboardButton("Математика",url="https://resh.skysmart.ru/1-klass/matematika/moro-1222?ysclid=mty9kc0imf317229549")
-    rus = types.InlineKeyboardButton("Русский язык", url="https://resh.skysmart.ru/1-klass/russkij-yazyk/krylova-629")
-    liter = types.InlineKeyboardButton("Литература", url="https://budu5.com/gdz/view/143")
-    okr = types.InlineKeyboardButton("Окружающий мир", url="https://budu5.com/gdz/view/90")
-    markup.add(matem, rus)
-    markup.add(liter, okr)
-
-    return markup
-
-def btn_2():
-    markup = types.InlineKeyboardMarkup()
-    matem = types.InlineKeyboardButton("Математика",url="https://budu5.com/gdz/view/110")
-    rus = types.InlineKeyboardButton("Русский язык", url="https://budu5.com/gdz/view/19")
-    liter = types.InlineKeyboardButton("Литература", url="https://budu5.com/gdz/view/150")
-    okr = types.InlineKeyboardButton("Окружающий мир", url="https://budu5.com/gdz/view/97")
-    angl = types.InlineKeyboardButton("Английский язык",url="https://budu5.com/gdz/view/214")
-    markup.add(matem, rus)
-    markup.add(liter, okr)
-    markup.add(angl)
-
-    return markup
-
-def btn_3():
-    markup = types.InlineKeyboardMarkup()
-    matem = types.InlineKeyboardButton("Математика",url="https://reshak.ru/tag/3klass_math.html")
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/3klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/3klass_chtenie.html")
-    okr = types.InlineKeyboardButton("Окружающий мир", url="https://reshak.ru/tag/3klass_mir.html")
-    angl = types.InlineKeyboardButton("Английский язык",url="https://reshak.ru/tag/3klass_eng.html")
-    markup.add(matem, rus)
-    markup.add(liter, okr)
-    markup.add(angl,)
-
-    return markup
-
-def btn_4():
-    markup = types.InlineKeyboardMarkup()
-    matem = types.InlineKeyboardButton("Математика", url="https://reshak.ru/tag/4klass_math.html")
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/4klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/4klass_chtenie.html")
-    okr = types.InlineKeyboardButton("Окружающий мир", url="https://reshak.ru/tag/4klass_mir.html")
-    angl = types.InlineKeyboardButton("Английский язык", url="https://reshak.ru/tag/4klass_eng.html")
-    markup.add(matem, rus)
-    markup.add(liter, okr)
-    markup.add(angl)
-
-    return markup
-
-def btn_5():
-    markup = types.InlineKeyboardMarkup()
-    matem = types.InlineKeyboardButton("Математика", url="https://reshak.ru/tag/5klass_math.html")
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/5klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/5klass_chtenie.html")
-    angl = types.InlineKeyboardButton("Английский язык", url="https://reshak.ru/tag/5klass_eng.html")
-    ist = types.InlineKeyboardButton("История", url="https://reshak.ru/tag/5klass_istoria.html")
-    geogr = types.InlineKeyboardButton("География", url="https://reshak.ru/tag/5klass_geograph.html")
-    biolog = types.InlineKeyboardButton("Биология", url="https://reshak.ru/tag/5klass_bio.html")
-    markup.add(matem, rus)
-    markup.add(liter, ist)
-    markup.add(geogr, biolog)
-    markup.add(angl)
-
-    return markup
-
-def btn_6():
-    markup = types.InlineKeyboardMarkup()
-    matem = types.InlineKeyboardButton("Математика", url="https://reshak.ru/tag/6klass_math.html")
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/6klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/6klass_chtenie.html")
-    angl = types.InlineKeyboardButton("Английский язык", url="https://reshak.ru/tag/6klass_eng.html")
-    ist = types.InlineKeyboardButton("История", url="https://reshak.ru/tag/6klass_istoria.html")
-    geogr = types.InlineKeyboardButton("География", url="https://reshak.ru/tag/6klass_geograph.html")
-    biolog = types.InlineKeyboardButton("Биология", url="https://reshak.ru/tag/6klass_bio.html")
-    markup.add(matem, rus)
-    markup.add(liter, ist)
-    markup.add(geogr, biolog)
-    markup.add(angl)
-
-    return markup
-
-def btn_7():
-    markup = types.InlineKeyboardMarkup()
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/7klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/7klass_chtenie.html")
-    angl = types.InlineKeyboardButton("Английский язык", url="https://reshak.ru/tag/7klass_eng.html")
-    ist = types.InlineKeyboardButton("История", url="https://reshak.ru/tag/7klass_istoria.html")
-    geogr = types.InlineKeyboardButton("География", url="https://reshak.ru/tag/7klass_geograph.html")
-    biolog = types.InlineKeyboardButton("Биология", url="https://reshak.ru/tag/7klass_bio.html")
-    alg = types.InlineKeyboardButton("Алгебра", url="https://reshak.ru/tag/7klass_alg.html")
-    fizika = types.InlineKeyboardButton("Физика",url="https://reshak.ru/tag/7klass_fiz.html")
-    geo = types.InlineKeyboardButton("Геометрия",url="https://reshak.ru/tag/7klass_geo.html")
-    markup.add(alg, rus)
-    markup.add(liter, ist)
-    markup.add(geogr, biolog)
-    markup.add(angl, fizika)
-    markup.add(geo)
-    return markup
-
-def btn_8():
-    markup = types.InlineKeyboardMarkup()
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/8klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/8klass_chtenie.html")
-    angl = types.InlineKeyboardButton("Английский язык", url="https://reshak.ru/tag/8klass_eng.html")
-    ist = types.InlineKeyboardButton("История", url="https://reshak.ru/tag/8klass_istoria.html")
-    geogr = types.InlineKeyboardButton("География", url="https://reshak.ru/tag/8klass_geograph.html")
-    biolog = types.InlineKeyboardButton("Биология", url="https://reshak.ru/tag/8klass_bio.html")
-    alg = types.InlineKeyboardButton("Алгебра", url="https://reshak.ru/tag/8klass_alg.html")
-    fizika = types.InlineKeyboardButton("Физика",url="https://reshak.ru/tag/8klass_fiz.html")
-    geo = types.InlineKeyboardButton("Геометрия",url="https://reshak.ru/tag/8klass_geo.html")
-    ximia = types.InlineKeyboardButton("Химия", url="https://reshak.ru/tag/8klass_him.html")
-    markup.add(alg, rus)
-    markup.add(liter, ist)
-    markup.add(geogr, biolog)
-    markup.add(angl, fizika)
-    markup.add(geo, ximia)
-    return markup
-
-def btn_9():
-    markup = types.InlineKeyboardMarkup()
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/9klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/9klass_chtenie.html")
-    angl = types.InlineKeyboardButton("Английский язык", url="https://reshak.ru/tag/9klass_eng.html")
-    ist = types.InlineKeyboardButton("История", url="https://reshak.ru/tag/9klass_istoria.html")
-    geogr = types.InlineKeyboardButton("География", url="https://reshak.ru/tag/9klass_geograph.html")
-    biolog = types.InlineKeyboardButton("Биология", url="https://reshak.ru/tag/9klass_bio.html")
-    alg = types.InlineKeyboardButton("Алгебра", url="https://reshak.ru/tag/9klass_alg.html")
-    fizika = types.InlineKeyboardButton("Физика",url="https://reshak.ru/tag/9klass_fiz.html")
-    geo = types.InlineKeyboardButton("Геометрия",url="https://reshak.ru/tag/9klass_geo.html")
-    ximia = types.InlineKeyboardButton("Химия",url="https://reshak.ru/tag/9klass_him.html")
-    markup.add(alg, rus)
-    markup.add(liter, ist)
-    markup.add(geogr, biolog)
-    markup.add(angl, fizika)
-    markup.add(geo, ximia)
-    return markup
-
-def btn_10():
-    markup = types.InlineKeyboardMarkup()
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/10klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/10klass_chtenie.html")
-    angl = types.InlineKeyboardButton("Английский язык", url="https://reshak.ru/tag/10klass_eng.html")
-    ist = types.InlineKeyboardButton("История", url="https://reshak.ru/tag/10klass_istoria.html")
-    geogr = types.InlineKeyboardButton("География", url="https://reshak.ru/tag/10klass_geograph.html")
-    biolog = types.InlineKeyboardButton("Биология", url="https://reshak.ru/tag/10klass_bio.html")
-    alg = types.InlineKeyboardButton("Алгебра", url="https://reshak.ru/tag/10klass_alg.html")
-    fizika = types.InlineKeyboardButton("Физика",url="https://reshak.ru/tag/10klass_fiz.html")
-    geo = types.InlineKeyboardButton("Геометрия",url="https://reshak.ru/tag/10klass_geo.html")
-    ximia = types.InlineKeyboardButton("Химия",url="https://reshak.ru/tag/10klass_him.html")
-    markup.add(liter, ist)
-    markup.add(geogr, biolog)
-    markup.add(angl, fizika)
-    markup.add(geo, ximia)
-    markup.add(rus,alg)
-    return markup
-
-def btn_11():
-    markup = types.InlineKeyboardMarkup()
-    rus = types.InlineKeyboardButton("Русский язык", url="https://reshak.ru/tag/11klass_rus.html")
-    liter = types.InlineKeyboardButton("Литература", url="https://reshak.ru/tag/11klass_chtenie.html")
-    angl = types.InlineKeyboardButton("Английский язык", url="https://reshak.ru/tag/11klass_eng.html")
-    ist = types.InlineKeyboardButton("История", url="https://reshak.ru/tag/11klass_istoria.html")
-    geogr = types.InlineKeyboardButton("География", url="https://reshak.ru/tag/11klass_geograph.html")
-    biolog = types.InlineKeyboardButton("Биология", url="https://reshak.ru/tag/11klass_bio.html")
-    alg = types.InlineKeyboardButton("Алгебра", url="https://reshak.ru/tag/11klass_alg.html")
-    fizika = types.InlineKeyboardButton("Физика",url="https://reshak.ru/tag/11klass_fiz.html")
-    geo = types.InlineKeyboardButton("Геометрия",url="https://reshak.ru/tag/11klass_geo.html")
-    ximia = types.InlineKeyboardButton("Химия",url="https://reshak.ru/tag/11klass_him.html")
-    markup.add(alg, rus)
-    markup.add(liter, ist)
-    markup.add(geogr, biolog)
-    markup.add(angl, fizika)
-    markup.add(geo, ximia)
-    return markup
 
 @bot.message_handler(func=lambda message: True)
 def handle_menu_click(message):
     text = message.text
     chat_id = message.chat.id
 
-    if text == "1 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_1(),
-        )
-    elif text == "2 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_2(),
-        )
-    elif text == "3 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_3(),
-        )
-    elif text == "4 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_4(),
-        )
-    elif text == "5 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_5(),
-        )
-    elif text == "6 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_6(),
-        )
-    elif text == "7 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_7(),
-        )
-    elif text == "8 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_8(),
-        )
-    elif text == "9 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_9(),
-        )
-    elif text == "10 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_10(),
-        )
-    elif text == "11 Класс":
-        bot.send_message(
-            chat_id,
-            "Выбери предмет:",
-            reply_markup=btn_11(),
-        )
+    if text == "Вернуться назад":
+        bot.send_message(chat_id, "Выбери:", reply_markup=get_main_menu())
+        return
+
+    for i in range(1, 12):
+        number_class = f"{str(i)} Класс"
+
+        if text == number_class:
+            bot.send_message(chat_id, "Выбери предмет:", reply_markup=function_list[i - 1]())
+            break
 
 
+def hw_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("Добавить домашку"))
+    markup.add(types.KeyboardButton("Посмотреть старые"))
+    markup.add(types.KeyboardButton("Вернуться назад"))
+    return markup
+
+
+
+@bot.message_handler(func=lambda m: True)
+def hw_handle(message):
+    text = message.text
+    chat_id = message.chat.id
+
+
+    if text == "Вернуться назад":
+        bot.send_message(chat_id, "Выберb:", reply_markup=hw_menu())
+        return
+
+
+    if chat_id in hw_step and hw_step[chat_id] == "hw_subject":
+        subject = text.strip()
+        hw_step[chat_id] = f"hw_task:{subject}"
+        bot.send_message(
+            chat_id,
+            f"Предмет: {subject} Напиши задание:",
+            reply_markup=get_back()
+        )
+        return
+
+
+    if chat_id in hw_step and hw_step[chat_id].startswith("hw_task:"):
+        subject = hw_step[chat_id].split(":", 1)[1]
+        task = text.strip()
+        hw_storage.setdefault(chat_id, []).append((subject, task))
+        del hw_step[chat_id]
+        bot.send_message(
+            chat_id,
+            f"Добавлено Предмет: {subject} Задание: {task}",
+            reply_markup=hw_menu()
+        )
+        return
+
+
+    if text == "Добавить домашку":
+        hw_step[chat_id] = "hw_subject"
+        bot.send_message(chat_id, "Напиши предмет:", reply_markup=get_back())
+        return
+
+
+    if text == "Посмотреть старые":
+        hw_list = hw_storage.get(chat_id, [])
+        if not hw_list:
+            bot.send_message(chat_id, "Пока пусто.", reply_markup=hw_menu())
+            return
+        out = "Твои задания: "
+        for i, (subj, t) in enumerate(hw_list, 1):
+            out += f"{i}. {subj}: {t}\n"
+        bot.send_message(chat_id, out, reply_markup=hw_menu())
+        return
+
+
+
+
+bot.remove_webhook()
 bot.infinity_polling()
